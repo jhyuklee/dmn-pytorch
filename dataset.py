@@ -210,17 +210,26 @@ class Dataset(object):
             data = self.dataset[str(set_num) + '_train']
         elif mode == 'va':
             ptr = self.valid_ptr
-            data = self.dataset[str(set_num) + '_train'] # TODO: 10% of train
+            data = self.dataset[str(set_num) + '_valid']
         elif mode == 'te':
             ptr = self.test_ptr
             data = self.dataset[str(set_num) + '_test']
         
         batch_size = (batch_size if ptr+batch_size<=len(data) else len(data)-ptr)
         padded_data = self.pad_data(copy.deepcopy(data[ptr:ptr+batch_size]))
-        inputs = [d[:2] for d in padded_data]
-        targets = [d[2:] for d in padded_data]
-        lengths = [[idx for idx, val in enumerate(d[0]) if val == self.word2idx['.']]
-                for d in padded_data]
+        stories = [d[0] for d in padded_data]
+        questions = [d[1] for d in padded_data]
+        answers = [d[2] for d in padded_data]
+        sup_facts = [d[3] for d in padded_data]
+        s_lengths = [[idx+1 for idx, val in enumerate(d[0]) 
+            if val == self.word2idx['.']] for d in padded_data]
+        e_lengths = []
+        for s_len in s_lengths:
+            e_lengths.append(len(s_len))
+            while len(s_len) != self.config.max_sentnum:
+                s_len.append(0)
+        q_lengths = [[idx+1 for idx, val in enumerate(d[1]) 
+            if val == self.word2idx['?']][0] for d in padded_data]
         
         if mode == 'tr':
             self.train_ptr = (ptr + batch_size) % len(data)
@@ -229,7 +238,8 @@ class Dataset(object):
         elif mode == 'te':
             self.test_ptr = (ptr + batch_size) % len(data)
 
-        return inputs, targets, lengths
+        return (stories, questions, answers, sup_facts, 
+                s_lengths, q_lengths, e_lengths)
     
     def get_batch_ptr(self, mode):
         if mode == 'tr':
@@ -239,13 +249,13 @@ class Dataset(object):
         elif mode == 'te':
             return self.test_ptr
 
-    def get_dataset_len(self, mode):
+    def get_dataset_len(self, mode, set_num):
         if mode == 'tr':
-            return len(self.train_data)
+            return len(self.dataset[str(set_num) + '_train'])
         elif mode == 'va':
-            return len(self.valid_data)
+            return len(self.dataset[str(set_num) + '_valid'])
         elif mode == 'te':
-            return len(self.test_data)
+            return len(self.dataset[str(set_num) + '_test'])
 
     def init_batch_ptr(self, mode=None):
         if mode is None:
@@ -259,7 +269,7 @@ class Dataset(object):
         elif mode == 'te':
             self.test_ptr = 0
 
-    def shuffle_data(self, set_num, mode='tr', seed=None):
+    def shuffle_data(self, mode='tr', set_num=1, seed=None):
         if seed is not None:
             np.random.seed(seed)
         if mode == 'tr':
@@ -268,6 +278,15 @@ class Dataset(object):
             np.random.shuffle(self.dataset[str(set_num) + '_train'])
         elif mode == 'te':
             np.random.shuffle(self.dataset[str(set_num) + '_test'])
+
+    def decode_data(self, s, q, a, sf, l):
+        print(l)
+        print('story:', 
+                ' '.join(self.map_dict(s[:l[-1]], self.idx2word)))
+        print('question:', ' '.join(self.map_dict(q, self.idx2word)))
+        print('answer:', self.map_dict(a, self.idx2word))
+        print('supporting fact:', sf)
+        print('length of sentences:', l)
 
     
 class Config(object):
@@ -284,7 +303,7 @@ class Config(object):
         self.word_vocab_size = 0
         self.save_preprocess = False
         self.preprocess_save_path = './data/babi(tmp).pkl'
-        self.preprocess_load_path = './data/babi(tmp).pkl'
+        self.preprocess_load_path = './data/babi(10k).pkl'
 
 
 if __name__ == '__main__':
@@ -301,13 +320,34 @@ if __name__ == '__main__':
     pp(([(k,v) for k, v in vars(dataset.config).items() if '__' not in k]))
     print()
    
-    for set_num in range(20):
+    for set_num in range(1):
+        """
+        mode = 'tr'
         while True:
-            mode = 'tr'
+            i, t, l = dataset.get_next_batch(mode, set_num+1, batch_size=1000)
+            print(dataset.get_batch_ptr(mode), len(i))
+            if dataset.get_batch_ptr(mode) == 0:
+                print('iteration test pass!', mode)
+                break
+
+        mode = 'va'
+        while True:
             i, t, l = dataset.get_next_batch(mode, set_num+1, batch_size=100)
             print(dataset.get_batch_ptr(mode), len(i))
             if dataset.get_batch_ptr(mode) == 0:
-                print(i[0], t[0], l[0])
-                print('\niteration test pass!')
+                print('iteration test pass!', mode)
+                break
+        """
+
+        mode = 'te'
+        dataset.shuffle_data(mode, set_num+1)
+        while True:
+            s, q, a, sf, sl, ql, el = dataset.get_next_batch(
+                    mode, set_num+1, batch_size=100)
+            print(dataset.get_batch_ptr(mode), len(s))
+            if dataset.get_batch_ptr(mode) == 0:
+                print(s[0], q[0], a[0], sf[0], sl[0], ql[0], el[0])
+                dataset.decode_data(s[0], q[0], a[0], sf[0], sl[0][:el[0]])
+                print('iteration test pass!', mode)
                 break
 

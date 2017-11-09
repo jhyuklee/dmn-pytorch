@@ -6,36 +6,54 @@ import numpy as np
 import math
 import sys
 from torch.autograd import Variable
-from tensorboardX import SummaryWriter
 
 
-class NETS(nn.Module):
-    def __init__(self, config, widx2vec, iter=None):
-        super(NETS, self).__init__()
+class DMN(nn.Module):
+    def __init__(self, config, idx2vec):
+        super(DMN, self).__init__()
         self.config = config
 
         # embedding layers
         self.word_embed = nn.Embedding(config.word_vocab_size, config.word_embed_dim,
-                padding_idx=1)
+                padding_idx=0)
         
         # dimensions according to settings
-        self.rnn_idim = config.word_embed_dim
+        self.s_rnn_idim = config.word_embed_dim
+        self.q_rnn_idim = config.word_embed_dim
+        self.e_rnn_idim = config.s_rnn_hdim
+        self.a_rnn_idim = config.q_rnn_hdim + config.word_vocab_size
+        self.m_cell_idim = config.e_rnn_hdim
+        self.z_dim = config.s_rnn_hdim * 7 # simplified (all hdim equal)
 
         # rnn layers
-        self.t_rnn = nn.GRU(self.rnn_idim, config.rnn_hdim, config.rnn_ln,
-                dropout=config.rnn_dr, batch_first=True, bidirectional=False)
+        self.s_rnn = nn.GRU(self.s_rnn_idim, config.s_rnn_hdim, config.s_rnn_ln,
+                dropout=config.s_rnn_dr, batch_first=True, bidirectional=False)
+        self.q_rnn = nn.GRU(self.q_rnn_idim, config.q_rnn_hdim, config.q_rnn_ln,
+                dropout=config.q_rnn_dr, batch_first=True, bidirectional=False)
+        self.e_rnn = nn.GRU(self.e_rnn_idim, config.e_rnn_hdim, config.e_rnn_ln,
+                dropout=config.e_rnn_dr, batch_first=True, bidirectional=False)
+        self.a_rnn = nn.GRU(self.a_rnn_idim, config.a_rnn_hdim, config.a_rnn_ln,
+                dropout=config.a_rnn_dr, batch_first=True, bidirectional=False)
+        self.m_cell = nn.GRUCell(self.m_cell_idim, config.m_cell_hdim)
 
         # linear layers
-        self.output_fc1 = nn.Linear(config.fc1_dim, config.output_dim)
+        self.z_sq = Variable(torch.FloatTensor(config.s_rnn_hdim, config.q_rnn_hdim),
+                requires_grad=True).cuda()
+        self.z_sm = Variable(torch.FloatTensor(config.s_rnn_hdim, config.m_cell_hdim),
+                requires_grad=True).cuda()
+        self.out = Variable(torch.FloatTensor(
+            config.m_cell_hdim, config.word_vocab_size), requires_grad=True).cuda()
+        self.g1 = nn.Linear(self.z_dim, config.g1_dim)
+        self.g2 = nn.Linear(config.g1_dim, 1)
 
         # initialization
-        self.init_word_embed(widx2vec)
+        self.init_word_embed(idx2vec)
         params = self.model_params(debug=False)
         self.optimizer = optim.Adam(params, lr=config.lr)
         self.criterion = nn.CrossEntropyLoss()
 
-    def init_word_embed(self, widx2vec):
-        self.word_embed.weight.data.copy_(torch.from_numpy(np.array(widx2vec)))
+    def init_word_embed(self, idx2vec):
+        self.word_embed.weight.data.copy_(torch.from_numpy(np.array(idx2vec)))
         self.word_embed.weight.requires_grad = False
 
     def model_params(self, debug=True):
@@ -58,38 +76,80 @@ class NETS(nn.Module):
         return params
     
     def init_rnn_h(self, batch_size):
-        return (Variable(torch.zeros(
-            self.config.t_rnn_ln*1, batch_size, self.config.t_rnn_hdim)).cuda(),
-                Variable(torch.zeros(
-            self.config.t_rnn_ln*1, batch_size, self.config.t_rnn_hdim)).cuda())
+        return Variable(torch.zeros(
+            self.config.s_rnn_ln*1, batch_size, self.config.s_rnn_hdim)).cuda()
 
-    def rnn_layer(self, tc):
-
-        # word embedding for title, then concat
-        word_embed = self.word_embed(tw.view(-1, self.config.max_sentlen))
-        lstm_input = word_embed
-
-        # typical rnn
-        init_rnn_h = self.init_t_rnn_h(lstm_input.size(0))
-        lstm_out, _ = self.t_rnn(lstm_input, init_t_rnn_h)
-        lstm_out = lstm_out.contiguous().view(-1, self.config.t_rnn_hdim)
-        lstm_out = lstm_out.cpu()
-        fw_tl = (torch.arange(0, tl.size(0)).type(torch.LongTensor) *
-                self.config.max_sentlen + tl.data.cpu() - 1)
-        selected = lstm_out[fw_tl,:].view(-1, self.config.t_rnn_hdim).cuda()
-
+    def input_module(self, stories, s_lens):
+        word_embed = self.word_embed(stories)
+        init_s_rnn_h = self.init_rnn_h(stories.size(0))
+        gru_out, _ = self.s_rnn(word_embed, init_s_rnn_h)
+        gru_out = gru_out.contiguous().view(-1, self.config.s_rnn_hdim).cpu()
+        s_lens_offset = (torch.arange(0, stories.size(0)).type(torch.LongTensor)
+                * self.config.max_slen).unsqueeze(1)
+        s_lens = (s_lens + s_lens_offset).view(-1)
+        selected = gru_out[s_lens,:].view(-1, self.config.max_sentnum, 
+                self.config.s_rnn_hdim).cuda()
         return selected 
 
-    def matching_layer(self, intention, snapshot_mf, grid):
-        day_fc1 = F.relu(self.day_fc1(output))
-        slot_fc1 = F.relu(self.slot_fc1(output))
-        output = self.output_fc1(torch.cat((day_fc1, slot_fc1), 1))
-        return output
+    def question_module(self, questions, q_lens):
+        word_embed = self.word_embed(questions)
+        init_q_rnn_h = self.init_rnn_h(questions.size(0))
+        gru_out, _ = self.q_rnn(word_embed, init_q_rnn_h)
+        gru_out = gru_out.contiguous().view(-1, self.config.q_rnn_hdim).cpu()
+        q_lens = (torch.arange(0, questions.size(0)).type(torch.LongTensor)
+                * self.config.max_qlen + q_lens)
+        selected = gru_out[q_lens,:].view(-1, self.config.q_rnn_hdim).cuda() 
+        return selected
 
-    def forward(self, inputs):
-        output = inputs
+    def episodic_memory_module(self, s_rep, q_rep, e_lens, memory):
+        q_rep = q_rep.unsqueeze(1).expand_as(s_rep)
+        memory = memory.unsqueeze(1).expand_as(s_rep)
+        Z = torch.cat([s_rep, memory, q_rep, s_rep*q_rep, s_rep*memory,
+            torch.abs(s_rep-q_rep), torch.abs(s_rep-memory)], 2)
+        #     torch.mm(torch.mm(s_rep, self.z_sq), q_rep),
+        #     torch.mm(torch.mm(s_rep, self.z_sm), memory)], 2)
+        # print('z', Z.size())
+        # TODO: matching..
+        # print(torch.mm(torch.mm(s_rep.view(-1, self.config.s_rnn_hdim), self.z_sq), 
+        #     torch.transpose(
+        #         q_rep.view(-1, self.config.q_rnn_hdim), 0, 1).contiguous()))
+        G = F.sigmoid(self.g2(F.tanh(self.g1(Z.view(-1, self.z_dim)))))
+        G = G.view(-1, self.config.max_sentnum).unsqueeze(2)
+        # print(G.size())
 
-        return output
+        init_e_rnn_h = self.init_rnn_h(s_rep.size(0))
+        # TODO: different.. insert G => edit it to cell version
+        gru_out, _ = self.e_rnn(s_rep, init_e_rnn_h)
+        gru_out = gru_out.contiguous().view(-1, self.config.e_rnn_hdim).cpu()
+        e_lens = (torch.arange(0, s_rep.size(0)).type(torch.LongTensor)
+                * self.config.max_sentnum + e_lens)
+        selected = gru_out[e_lens,:].view(-1, self.config.e_rnn_hdim).cuda() 
+        # print(selected.size())
+        return selected
+
+    def answer_module(self, q_rep, memory):
+        y = F.softmax(torch.mm(memory, self.out)) 
+        init_a_rnn_h = self.init_rnn_h(q_rep.size(0))
+        gru_out, _ = self.a_rnn(s_rep, init_a_rnn_h)
+        # TODO: edit it to cell version
+
+
+    def forward(self, stories, questions, s_lens, q_lens, e_lens):
+        s_rep = self.input_module(stories, s_lens)
+        print('stories', s_rep.size())
+        q_rep = self.question_module(questions, q_lens)
+        print('questions', q_rep.size())
+        
+        memory = q_rep # initial memory
+        for episode in range(self.config.max_episode):
+            e_rep = self.episodic_memory_module(s_rep, q_rep, e_lens, memory)
+            memory = self.m_cell(e_rep, memory)
+        print('memory', memory.size())
+        
+        outputs = self.answer_module(q_rep, memory)
+        print('outputs', outputs.size())
+
+        return outputs
 
     def get_regloss(self, weight_decay=None):
         if weight_decay is None:

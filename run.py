@@ -8,7 +8,7 @@ from torch.autograd import Variable
 from datetime import datetime
 
 
-def run_epoch(m, d, ep, mode='tr', is_train=True):
+def run_epoch(m, d, ep, mode='tr', set_num=1, is_train=True):
     total_metrics = np.zeros(2)
     total_step = 0.0
     print_step = m.config.print_step
@@ -17,14 +17,25 @@ def run_epoch(m, d, ep, mode='tr', is_train=True):
 
     while True:
         m.optimizer.zero_grad()
-        inputs, targets = d.get_next_batch(mode=mode, pad=True)
-        targets = Variable(torch.LongTensor(np.array(targets)).cuda()) 
+        stories, questions, answers, sup_facts, s_lens, q_lens, e_lens= \
+                d.get_next_batch(mode, set_num)
+        #d.decode_data(stories[0], questions[0], answers[0], sup_facts[0], s_lens[0])
+        wrap_tensor = lambda x: torch.LongTensor(np.array(x))
+        wrap_var = lambda x: Variable(wrap_tensor(x)).cuda()
+        stories = wrap_var(stories)
+        questions = wrap_var(questions)
+        answers = wrap_var(answers)
+        sup_facts = wrap_var(sup_facts)
+        s_lens = wrap_tensor(s_lens)
+        q_lens = wrap_tensor(q_lens)
+        e_lens = wrap_tensor(e_lens)
 
         if is_train: m.train()
         else: m.eval()
-        outputs = m(inputs)
-        loss = m.criterion(outputs, targets)
-        metrics = m.get_metrics(outputs, targets)
+        outputs = m(stories, questions, s_lens, q_lens, e_lens)
+        """
+        loss = m.criterion(outputs, answers)
+        metrics = m.get_metrics(outputs, answers)
 
         if is_train:
             loss.backward()
@@ -33,12 +44,14 @@ def run_epoch(m, d, ep, mode='tr', is_train=True):
 
         total_metrics[0] += loss.data[0]
         total_metrics[1] += metrics
+        """
         total_step += 1.0
         
         # print step
         if d.get_batch_ptr(mode) % print_step == 0 or total_step == 1:
             et = int((datetime.now() - start_time).total_seconds())
-            _progress = progress(d.get_batch_ptr(mode) / d.get_dataset_len(mode))
+            _progress = progress(
+                    d.get_batch_ptr(mode) / d.get_dataset_len(mode, set_num))
             if d.get_batch_ptr(mode) == 0:
                 _progress = progress(1)
             _progress += '[%s] time: %s' % (
