@@ -32,19 +32,24 @@ def run_epoch(m, d, ep, mode='tr', set_num=1, is_train=True):
 
         if is_train: m.train()
         else: m.eval()
-        outputs = m(stories, questions, s_lens, q_lens, e_lens)
-        """
-        loss = m.criterion(outputs, answers)
-        metrics = m.get_metrics(outputs, answers)
+        outputs, gates = m(stories, questions, s_lens, q_lens, e_lens)
+        a_loss = m.criterion(outputs[:,0,:], answers[:,0])
+        if answers.size(1) > 1: # multiple answer
+            a_loss += m.criterion(outputs[:,1,:], answers[:,1])
+        for episode in range(sup_facts.size(1)):
+            if episode == 0:
+                g_loss = m.criterion(gates[:,episode,:], sup_facts[:,episode]) 
+            else:
+                g_loss += m.criterion(gates[:,episode,:], sup_facts[:,episode]) 
+        metrics = m.get_metrics(outputs, answers, multiple=answers.size(1)>1)
 
         if is_train:
-            loss.backward()
+            a_loss.backward()
             nn.utils.clip_grad_norm(m.parameters(), m.config.grad_max_norm)
             m.optimizer.step()
 
-        total_metrics[0] += loss.data[0]
+        total_metrics[0] += a_loss.data[0]
         total_metrics[1] += metrics
-        """
         total_step += 1.0
         
         # print step

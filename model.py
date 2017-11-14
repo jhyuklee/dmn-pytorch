@@ -23,26 +23,21 @@ class DMN(nn.Module):
         self.e_rnn_idim = config.s_rnn_hdim
         self.a_rnn_idim = config.q_rnn_hdim + config.word_vocab_size
         self.m_cell_idim = config.e_rnn_hdim
-        self.z_dim = config.s_rnn_hdim * 7 # simplified (all hdim equal)
+        self.z_dim = config.s_rnn_hdim * 7 + 2 # simplified (all hdim equal)
 
         # rnn layers
         self.s_rnn = nn.GRU(self.s_rnn_idim, config.s_rnn_hdim, config.s_rnn_ln,
                 dropout=config.s_rnn_dr, batch_first=True, bidirectional=False)
         self.q_rnn = nn.GRU(self.q_rnn_idim, config.q_rnn_hdim, config.q_rnn_ln,
                 dropout=config.q_rnn_dr, batch_first=True, bidirectional=False)
-        self.e_rnn = nn.GRU(self.e_rnn_idim, config.e_rnn_hdim, config.e_rnn_ln,
-                dropout=config.e_rnn_dr, batch_first=True, bidirectional=False)
-        self.a_rnn = nn.GRU(self.a_rnn_idim, config.a_rnn_hdim, config.a_rnn_ln,
-                dropout=config.a_rnn_dr, batch_first=True, bidirectional=False)
+        self.e_cell = nn.GRUCell(self.e_rnn_idim, config.e_rnn_hdim)
         self.m_cell = nn.GRUCell(self.m_cell_idim, config.m_cell_hdim)
+        self.a_cell = nn.GRUCell(self.a_rnn_idim, config.a_rnn_hdim)
 
         # linear layers
-        self.z_sq = Variable(torch.FloatTensor(config.s_rnn_hdim, config.q_rnn_hdim),
-                requires_grad=True).cuda()
-        self.z_sm = Variable(torch.FloatTensor(config.s_rnn_hdim, config.m_cell_hdim),
-                requires_grad=True).cuda()
-        self.out = Variable(torch.FloatTensor(
-            config.m_cell_hdim, config.word_vocab_size), requires_grad=True).cuda()
+        self.z_sq = nn.Linear(config.s_rnn_hdim, config.q_rnn_hdim, bias=False)
+        # self.z_sm = nn.Linear(config.s_rnn_hdim, config.m_cell_hdim, bias=False)
+        self.out = nn.Linear(config.m_cell_hdim, config.word_vocab_size, bias=False)
         self.g1 = nn.Linear(self.z_dim, config.g1_dim)
         self.g2 = nn.Linear(config.g1_dim, 1)
 
@@ -79,6 +74,10 @@ class DMN(nn.Module):
         return Variable(torch.zeros(
             self.config.s_rnn_ln*1, batch_size, self.config.s_rnn_hdim)).cuda()
 
+    def init_cell_h(self, batch_size):
+        return Variable(torch.zeros(
+            batch_size, self.config.s_rnn_hdim)).cuda()
+
     def input_module(self, stories, s_lens):
         word_embed = self.word_embed(stories)
         init_s_rnn_h = self.init_rnn_h(stories.size(0))
@@ -104,52 +103,65 @@ class DMN(nn.Module):
     def episodic_memory_module(self, s_rep, q_rep, e_lens, memory):
         q_rep = q_rep.unsqueeze(1).expand_as(s_rep)
         memory = memory.unsqueeze(1).expand_as(s_rep)
+        sw = self.z_sq(s_rep.view(-1, self.config.s_rnn_hdim)).view(
+                q_rep.size())
+        swq = torch.sum(sw * q_rep, 2, keepdim=True)
+        swm = torch.sum(sw * memory, 2, keepdim=True)
         Z = torch.cat([s_rep, memory, q_rep, s_rep*q_rep, s_rep*memory,
-            torch.abs(s_rep-q_rep), torch.abs(s_rep-memory)], 2)
-        #     torch.mm(torch.mm(s_rep, self.z_sq), q_rep),
-        #     torch.mm(torch.mm(s_rep, self.z_sm), memory)], 2)
+            torch.abs(s_rep-q_rep), torch.abs(s_rep-memory), swq, swm], 2)
         # print('z', Z.size())
-        # TODO: matching..
-        # print(torch.mm(torch.mm(s_rep.view(-1, self.config.s_rnn_hdim), self.z_sq), 
-        #     torch.transpose(
-        #         q_rep.view(-1, self.config.q_rnn_hdim), 0, 1).contiguous()))
         G = F.sigmoid(self.g2(F.tanh(self.g1(Z.view(-1, self.z_dim)))))
         G = G.view(-1, self.config.max_sentnum).unsqueeze(2)
-        # print(G.size())
+        G = torch.transpose(G, 0, 1).contiguous()
+        s_rep = torch.transpose(s_rep, 0, 1).contiguous()
+        # print('g', G.size())
 
-        init_e_rnn_h = self.init_rnn_h(s_rep.size(0))
-        # TODO: different.. insert G => edit it to cell version
-        gru_out, _ = self.e_rnn(s_rep, init_e_rnn_h)
-        gru_out = gru_out.contiguous().view(-1, self.config.e_rnn_hdim).cpu()
-        e_lens = (torch.arange(0, s_rep.size(0)).type(torch.LongTensor)
+        e_rnn_h = self.init_cell_h(s_rep.size(1))
+        # print('input', s_rep.size())
+        # print('hidden', e_rnn_h.size())
+        hiddens = []
+        for step, (gg, ss) in enumerate(zip(G, s_rep)):
+            e_rnn_h = gg * self.e_cell(ss, e_rnn_h) + (1 - gg) * e_rnn_h
+            hiddens.append(e_rnn_h)
+        hiddens = torch.transpose(torch.stack(hiddens), 0, 1).contiguous().view(
+                -1, self.config.e_rnn_hdim).cpu()
+        e_lens = (torch.arange(0, s_rep.size(1)).type(torch.LongTensor)
                 * self.config.max_sentnum + e_lens)
-        selected = gru_out[e_lens,:].view(-1, self.config.e_rnn_hdim).cuda() 
-        # print(selected.size())
-        return selected
+        selected = hiddens[e_lens,:].view(-1, self.config.e_rnn_hdim).cuda() 
+        # print('out', selected.size())
+        return selected, torch.transpose(G, 0, 1).contiguous()
 
     def answer_module(self, q_rep, memory):
-        y = F.softmax(torch.mm(memory, self.out)) 
-        init_a_rnn_h = self.init_rnn_h(q_rep.size(0))
-        gru_out, _ = self.a_rnn(s_rep, init_a_rnn_h)
-        # TODO: edit it to cell version
-
+        y = F.softmax(self.out(memory))
+        a_rnn_h = memory
+        ys = []
+        #print('q_rep', q_rep[0,:])
+        for step in range(2):
+            a_rnn_h = self.a_cell(torch.cat((y, q_rep), 1), a_rnn_h)
+            y = F.softmax(self.out(a_rnn_h))
+            ys.append(y)
+        ys = torch.transpose(torch.stack(ys), 0, 1).contiguous()
+        return ys
 
     def forward(self, stories, questions, s_lens, q_lens, e_lens):
         s_rep = self.input_module(stories, s_lens)
-        print('stories', s_rep.size())
+        # print('stories', s_rep.size())
         q_rep = self.question_module(questions, q_lens)
-        print('questions', q_rep.size())
+        # print('questions', q_rep.size())
         
         memory = q_rep # initial memory
+        gates = []
         for episode in range(self.config.max_episode):
-            e_rep = self.episodic_memory_module(s_rep, q_rep, e_lens, memory)
+            e_rep, gate = self.episodic_memory_module(s_rep, q_rep, e_lens, memory)
+            gates.append(gate)
             memory = self.m_cell(e_rep, memory)
-        print('memory', memory.size())
+        # print('memory', memory.size())
+        gates = torch.transpose(torch.stack(gates), 0, 1).contiguous().squeeze(3)
         
         outputs = self.answer_module(q_rep, memory)
-        print('outputs', outputs.size())
+        # print('outputs', outputs.size())
 
-        return outputs
+        return outputs, gates
 
     def get_regloss(self, weight_decay=None):
         if weight_decay is None:
@@ -169,14 +181,21 @@ class DMN(nn.Module):
 
         print('\tlearning rate decay to %.3f' % self.config.lr)
 
-    def get_metrics(self, outputs, targets):
-        max_idx = torch.max(outputs, 1)[1].data.cpu().numpy()
-        outputs_topk = torch.topk(outputs, topk)[1].data.cpu().numpy()
-        targets = targets.data.cpu().numpy()
-        outputs = outputs.data.cpu().numpy()
+    def get_metrics(self, outputs, targets, multiple=False):
+        if not multiple:
+            outputs = outputs[:,0,:]
+            targets = targets[:,0]
 
-        acc = np.mean([float(k == tk[0]) for (k, tk)
-            in zip(targets, outputs_topk)]) * 100
+            max_idx = torch.max(outputs, 1)[1].data.cpu().numpy()
+            outputs_topk = torch.topk(outputs, 3)[1].data.cpu().numpy()
+            targets = targets.data.cpu().numpy()
+            outputs = outputs.data.cpu().numpy()
+
+            acc = np.mean([float(k == tk[0]) for (k, tk)
+                in zip(targets, outputs_topk)]) * 100
+        else:
+            # TODO: multiple outputs
+            acc = 0
 
         return acc
  
