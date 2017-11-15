@@ -10,36 +10,37 @@ from run import run_epoch
 
 argparser = argparse.ArgumentParser()
 # run settings
-argparser.add_argument('--data_path', type=str, default='./data/babi(10k).pkl')
+argparser.add_argument('--data_path', type=str, default='./data/babi(v0.2).pkl')
 argparser.add_argument('--model_name', type=str, default='m')
 argparser.add_argument('--checkpoint_dir', type=str, default='./results/')
-argparser.add_argument('--batch_size', type=int, default=16)
-argparser.add_argument('--epoch', type=int, default=5)
+argparser.add_argument('--batch_size', type=int, default=64)
+argparser.add_argument('--epoch', type=int, default=10)
 argparser.add_argument('--train', type=int, default=1)
 argparser.add_argument('--valid', type=int, default=1)
 argparser.add_argument('--test', type=int, default=1)
 argparser.add_argument('--early_stop', type=int, default=0)
 argparser.add_argument('--resume', action='store_true', default=False)
 argparser.add_argument('--save', action='store_true', default=False)
-argparser.add_argument('--print_step', type=float, default=16)
+argparser.add_argument('--print_step', type=float, default=64)
 
 # model hyperparameters
-argparser.add_argument('--lr', type=float, default=0.01)
+argparser.add_argument('--lr', type=float, default=0.0005)
 argparser.add_argument('--lr_decay', type=float, default=1.0)
 argparser.add_argument('--wd', type=float, default=0)
-argparser.add_argument('--grad_max_norm', type=int, default=5)
-argparser.add_argument('--s_rnn_hdim', type=int, default=200)
+argparser.add_argument('--grad_max_norm', type=int, default=10)
+argparser.add_argument('--s_rnn_hdim', type=int, default=100)
 argparser.add_argument('--s_rnn_ln', type=int, default=1)
-argparser.add_argument('--s_rnn_dr', type=float, default=0.5)
-argparser.add_argument('--q_rnn_hdim', type=int, default=200)
+argparser.add_argument('--s_rnn_dr', type=float, default=0.0)
+argparser.add_argument('--q_rnn_hdim', type=int, default=100)
 argparser.add_argument('--q_rnn_ln', type=int, default=1)
-argparser.add_argument('--q_rnn_dr', type=float, default=0.5)
-argparser.add_argument('--e_rnn_hdim', type=int, default=200)
-argparser.add_argument('--m_cell_hdim', type=int, default=200)
-argparser.add_argument('--a_rnn_hdim', type=int, default=200)
-argparser.add_argument('--word_dr', type=float, default=0.0)
-argparser.add_argument('--g1_dim', type=int, default=300)
+argparser.add_argument('--q_rnn_dr', type=float, default=0.0)
+argparser.add_argument('--e_cell_hdim', type=int, default=100)
+argparser.add_argument('--m_cell_hdim', type=int, default=100)
+argparser.add_argument('--a_cell_hdim', type=int, default=100)
+argparser.add_argument('--word_dr', type=float, default=0.2)
+argparser.add_argument('--g1_dim', type=int, default=500)
 argparser.add_argument('--max_episode', type=int, default=5)
+argparser.add_argument('--alpha_cnt', type=int, default=2)
 args = argparser.parse_args()
 
 
@@ -59,7 +60,7 @@ def run_experiment(model, dataset, set_num):
             if model.config.valid:
                 print('- Validation')
                 met = run_epoch(model, dataset, ep, 'va', set_num, False)
-                if best_metric[0] < met[0]: # compare MRR
+                if best_metric[1] < met[1]:
                     best_metric = met
                     model.save_checkpoint({
                         'config': model.config,
@@ -102,7 +103,7 @@ def main():
     # new model experiment
     for set_num in range(20):
         print('\n[QA set %d]' % (set_num+1))
-        model = DMN(args, dataset.idx2vec).cuda()
+        model = DMN(args, dataset.idx2vec, set_num+1).cuda()
         results = run_experiment(model, dataset, set_num+1)
 
     print('### end of experiment')

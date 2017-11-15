@@ -25,7 +25,7 @@ def run_epoch(m, d, ep, mode='tr', set_num=1, is_train=True):
         stories = wrap_var(stories)
         questions = wrap_var(questions)
         answers = wrap_var(answers)
-        sup_facts = wrap_var(sup_facts)
+        sup_facts = wrap_var(sup_facts) - 1
         s_lens = wrap_tensor(s_lens)
         q_lens = wrap_tensor(q_lens)
         e_lens = wrap_tensor(e_lens)
@@ -36,19 +36,23 @@ def run_epoch(m, d, ep, mode='tr', set_num=1, is_train=True):
         a_loss = m.criterion(outputs[:,0,:], answers[:,0])
         if answers.size(1) > 1: # multiple answer
             a_loss += m.criterion(outputs[:,1,:], answers[:,1])
-        for episode in range(sup_facts.size(1)):
+        for episode in range(m.config.max_episode):
             if episode == 0:
                 g_loss = m.criterion(gates[:,episode,:], sup_facts[:,episode]) 
             else:
-                g_loss += m.criterion(gates[:,episode,:], sup_facts[:,episode]) 
+                #g_loss += m.criterion(gates[:,episode,:], sup_facts[:,episode])
+                pass
+        alpha = 0 if ep < m.config.alpha_cnt else 1
+        beta = 1
         metrics = m.get_metrics(outputs, answers, multiple=answers.size(1)>1)
+        total_loss = alpha * a_loss + beta * g_loss
 
         if is_train:
-            a_loss.backward()
-            nn.utils.clip_grad_norm(m.parameters(), m.config.grad_max_norm)
+            total_loss.backward()
+            # nn.utils.clip_grad_norm(m.parameters(), m.config.grad_max_norm)
             m.optimizer.step()
 
-        total_metrics[0] += a_loss.data[0]
+        total_metrics[0] += total_loss.data[0]
         total_metrics[1] += metrics
         total_step += 1.0
         

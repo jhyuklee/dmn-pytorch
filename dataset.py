@@ -69,7 +69,6 @@ class Dataset(object):
 
                         if '\t' in line: # question
                             question, answer, _ = line.split('\t')
-
                             question = ' '.join(question.split(' ')[1:])
                             q_split = nltk.word_tokenize(question)
                             if self.config.word2vec_type == 6:
@@ -129,20 +128,24 @@ class Dataset(object):
 
     def process_data(self, dir):
         print('\n### processing %s' % dir)
-        max_sentnum = max_slen = max_qlen = 0
-
         for subdir, _, files, in os.walk(dir):
             for file in sorted(files):
                 with open(os.path.join(subdir, file)) as f:
+                    max_sentnum = max_slen = max_qlen = 0
                     qa_num = file.split('_')[0][2:]
                     set_type = file.split('_')[-1][:-4]
                     story_list = []
+                    sf_cnt = 1
+                    si2sf = {}
                     total_data = []
 
                     for line_idx, line in enumerate(f):
                         line = line[:-1]
                         story_idx = int(line.split(' ')[0])
-                        if story_idx == 1: story_list = []
+                        if story_idx == 1: 
+                            story_list = []
+                            sf_cnt = 1
+                            si2sf = {}
 
                         if '\t' in line: # question
                             question, answer, sup_fact = line.split('\t')
@@ -156,7 +159,7 @@ class Dataset(object):
                             if self.config.word2vec_type == 6:
                                 answer = [w.lower() for w in answer]
                             answer = self.map_dict(answer, self.word2idx)
-                            sup_fact = [int(sf) for sf in sup_fact.split()]
+                            sup_fact = [si2sf[int(sf)] for sf in sup_fact.split()]
 
                             sentnum = story_list.count(self.word2idx['.'])
                             max_sentnum = max_sentnum if max_sentnum > sentnum \
@@ -176,13 +179,19 @@ class Dataset(object):
                                 s_split = [w.lower() for w in s_split]
                             s_split = self.map_dict(s_split, self.word2idx)
                             story_list += s_split
+                            si2sf[story_idx] = sf_cnt
+                            sf_cnt += 1
 
                     self.dataset[str(qa_num) + '_' + set_type] = total_data
-
-        self.config.word_vocab_size = len(self.word2idx)
-        self.config.max_sentnum = max_sentnum
-        self.config.max_slen = max_slen
-        self.config.max_qlen = max_qlen
+                    def check_update(d, k, v):
+                        if k in d:
+                            d[k] = v if v > d[k] else d[k]
+                        else:
+                            d[k] = v
+                    check_update(self.config.max_sentnum, int(qa_num), max_sentnum)
+                    check_update(self.config.max_slen, int(qa_num), max_slen)
+                    check_update(self.config.max_qlen, int(qa_num), max_qlen)
+                    self.config.word_vocab_size = len(self.word2idx)
 
         print('data size', len(total_data))
         print('max sentnum', max_sentnum)
@@ -193,11 +202,11 @@ class Dataset(object):
         while len(sentword) != maxlen:
             sentword.append(self.word2idx[self.PAD])
 
-    def pad_data(self, dataset):
+    def pad_data(self, dataset, set_num):
         for data in dataset:
             story, question, _, _ = data
-            self.pad_sent_word(story, self.config.max_slen)
-            self.pad_sent_word(question, self.config.max_qlen)
+            self.pad_sent_word(story, self.config.max_slen[set_num])
+            self.pad_sent_word(question, self.config.max_qlen[set_num])
 
         return dataset
     
@@ -216,17 +225,20 @@ class Dataset(object):
             data = self.dataset[str(set_num) + '_test']
         
         batch_size = (batch_size if ptr+batch_size<=len(data) else len(data)-ptr)
-        padded_data = self.pad_data(copy.deepcopy(data[ptr:ptr+batch_size]))
+        padded_data = self.pad_data(copy.deepcopy(data[ptr:ptr+batch_size]), set_num)
         stories = [d[0] for d in padded_data]
         questions = [d[1] for d in padded_data]
         answers = [d[2] for d in padded_data]
         sup_facts = [d[3] for d in padded_data]
+        for sup_fact in sup_facts:
+            while len(sup_fact) < self.config.max_episode:
+                sup_fact.append(self.config.max_sentnum[set_num]+1)
         s_lengths = [[idx+1 for idx, val in enumerate(d[0]) 
             if val == self.word2idx['.']] for d in padded_data]
         e_lengths = []
         for s_len in s_lengths:
             e_lengths.append(len(s_len))
-            while len(s_len) != self.config.max_sentnum:
+            while len(s_len) != self.config.max_sentnum[set_num]:
                 s_len.append(0)
         q_lengths = [[idx+1 for idx, val in enumerate(d[1]) 
             if val == self.word2idx['?']][0] for d in padded_data]
@@ -297,14 +309,22 @@ class Config(object):
                 + str(self.word2vec_type) + 'B.300d.txt'
         self.word_embed_dim = 300
         self.batch_size = 32
-        self.max_sentnum = 0
-        self.max_slen = 0
-        self.max_qlen = 0
+        self.max_sentnum = {}
+        self.max_slen = {}
+        self.max_qlen = {}
+        self.max_episode = 5
         self.word_vocab_size = 0
-        self.save_preprocess = False
+        self.save_preprocess = True
         self.preprocess_save_path = './data/babi(tmp).pkl'
         self.preprocess_load_path = './data/babi(10k).pkl'
 
+
+"""
+[Version Note]
+    v0.1: single max lengths
+    v0.2: max length per type, supporting fact index fix
+
+"""
 
 if __name__ == '__main__':
     config = Config()
