@@ -13,7 +13,7 @@ def run_epoch(m, d, ep, mode='tr', set_num=1, is_train=True):
     total_step = 0.0
     print_step = m.config.print_step
     start_time = datetime.now()
-    # d.shuffle_data(seed=None, mode='tr') 
+    d.shuffle_data(seed=None, mode='tr')
 
     while True:
         m.optimizer.zero_grad()
@@ -24,7 +24,7 @@ def run_epoch(m, d, ep, mode='tr', set_num=1, is_train=True):
         wrap_var = lambda x: Variable(wrap_tensor(x)).cuda()
         stories = wrap_var(stories)
         questions = wrap_var(questions)
-        answers = wrap_var(answers)
+        answers = wrap_var(answers) # TODO: multiple answer
         sup_facts = wrap_var(sup_facts) - 1
         s_lens = wrap_tensor(s_lens)
         q_lens = wrap_tensor(q_lens)
@@ -40,16 +40,16 @@ def run_epoch(m, d, ep, mode='tr', set_num=1, is_train=True):
             if episode == 0:
                 g_loss = m.criterion(gates[:,episode,:], sup_facts[:,episode]) 
             else:
-                #g_loss += m.criterion(gates[:,episode,:], sup_facts[:,episode])
+                g_loss += m.criterion(gates[:,episode,:], sup_facts[:,episode])
                 pass
-        alpha = 0 if ep < m.config.alpha_cnt else 1
-        beta = 1
+        beta = 0 if ep < m.config.beta_cnt and mode == 'tr' else 1
+        alpha = 1
         metrics = m.get_metrics(outputs, answers, multiple=answers.size(1)>1)
-        total_loss = alpha * a_loss + beta * g_loss
+        total_loss = alpha * g_loss + beta * a_loss
 
         if is_train:
             total_loss.backward()
-            # nn.utils.clip_grad_norm(m.parameters(), m.config.grad_max_norm)
+            nn.utils.clip_grad_norm(m.parameters(), m.config.grad_max_norm)
             m.optimizer.step()
 
         total_metrics[0] += total_loss.data[0]

@@ -35,9 +35,9 @@ class DMN(nn.Module):
         self.a_cell = nn.GRUCell(self.a_cell_idim, config.a_cell_hdim)
 
         # linear layers
-        self.z_sq = nn.Linear(config.s_rnn_hdim, config.q_rnn_hdim, bias=False)
+        # self.z_sq = nn.Linear(config.s_rnn_hdim, config.q_rnn_hdim, bias=False)
         # self.z_sm = nn.Linear(config.s_rnn_hdim, config.m_cell_hdim, bias=False)
-        self.out = nn.Linear(config.m_cell_hdim + config.q_rnn_hdim, 
+        self.out = nn.Linear(config.m_cell_hdim, 
                 config.word_vocab_size, bias=False)
         self.g1 = nn.Linear(self.z_dim, config.g1_dim)
         self.g2 = nn.Linear(config.g1_dim, 1)
@@ -79,19 +79,19 @@ class DMN(nn.Module):
         return Variable(torch.zeros(batch_size, self.config.s_rnn_hdim)).cuda()
 
     def input_module(self, stories, s_lens):
-        word_embed = self.word_embed(stories)
+        word_embed = F.dropout(self.word_embed(stories), self.config.word_dr)
         init_s_rnn_h = self.init_rnn_h(stories.size(0))
         gru_out, _ = self.s_rnn(word_embed, init_s_rnn_h)
         gru_out = gru_out.contiguous().view(-1, self.config.s_rnn_hdim).cpu()
         s_lens_offset = (torch.arange(0, stories.size(0)).type(torch.LongTensor)
                 * self.config.max_slen[self.set_num]).unsqueeze(1)
         s_lens = (torch.clamp(s_lens + s_lens_offset - 1, min=0)).view(-1)
-        selected = gru_out[s_lens,:].view(-1, self.config.max_sentnum[self.set_num], 
+        selected = gru_out[s_lens,:].view(-1, self.config.max_sentnum[self.set_num],
                 self.config.s_rnn_hdim).cuda()
         return selected 
 
     def question_module(self, questions, q_lens):
-        word_embed = self.word_embed(questions)
+        word_embed = F.dropout(self.word_embed(questions), self.config.word_dr)
         init_q_rnn_h = self.init_rnn_h(questions.size(0))
         gru_out, _ = self.q_rnn(word_embed, init_q_rnn_h)
         gru_out = gru_out.contiguous().view(-1, self.config.q_rnn_hdim).cpu()
@@ -108,10 +108,10 @@ class DMN(nn.Module):
         s_rep = torch.cat((s_rep, sentinel), 1)
         q_rep = q_rep.unsqueeze(1).expand_as(s_rep)
         memory = memory.unsqueeze(1).expand_as(s_rep)
-        sw = self.z_sq(s_rep.view(-1, self.config.s_rnn_hdim)).view(
-                q_rep.size())
-        swq = torch.sum(sw * q_rep, 2, keepdim=True)
-        swm = torch.sum(sw * memory, 2, keepdim=True)
+        # sw = self.z_sq(s_rep.view(-1, self.config.s_rnn_hdim)).view(
+        #         q_rep.size())
+        # swq = torch.sum(sw * q_rep, 2, keepdim=True)
+        # swm = torch.sum(sw * memory, 2, keepdim=True)
         # Z = torch.cat([s_rep, memory, q_rep, s_rep*q_rep, s_rep*memory,
         #     torch.abs(s_rep-q_rep), torch.abs(s_rep-memory), swq, swm], 2)
         Z = torch.cat([s_rep*q_rep, s_rep*memory,
@@ -139,7 +139,6 @@ class DMN(nn.Module):
         return selected, G.view(-1, self.config.max_sentnum[self.set_num] + 1)
 
     def answer_module(self, q_rep, memory):
-        """
         y = F.softmax(self.out(memory))
         a_rnn_h = memory
         ys = []
@@ -153,6 +152,7 @@ class DMN(nn.Module):
         """
         z = self.out(torch.cat((memory, q_rep), 1))
         ys = torch.transpose(torch.stack([z]), 0, 1).contiguous()
+        """
         return ys
 
     def forward(self, stories, questions, s_lens, q_lens, e_lens):
@@ -219,7 +219,7 @@ class DMN(nn.Module):
             acc = np.array([True for _ in range(outputs.size(0))])
             for target, topk in zip(target_list, topk_list):
                 acc *= np.array([float(k == tk[0]) for (k, tk) in zip(target, topk)])
-                print(acc)
+                # print(acc)
             acc = np.mean(acc)
 
         return acc
