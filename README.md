@@ -2,8 +2,11 @@
 This is a reproduction code of the paper, Ask me anything blah blab.
 
 bAbI Accuracy
+
  1: 100%
+
  2: 14.84%
+
  3: 18.75%
  4: 100%
  5: 99.51%

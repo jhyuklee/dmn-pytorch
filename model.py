@@ -206,9 +206,11 @@ class DMN(nn.Module):
         else:
             topk_list = []
             target_list = []
+            o_outputs = outputs[:]
+            o_targets = targets[:]
             for idx in range(outputs.size(1)):
-                outputs = outputs[:,idx,:]
-                targets = targets[:,idx]
+                outputs = o_outputs[:,idx,:]
+                targets = o_targets[:,idx]
                 max_idx = torch.max(outputs, 1)[1].data.cpu().numpy()
                 outputs_topk = torch.topk(outputs, 3)[1].data.cpu().numpy()
                 targets = targets.data.cpu().numpy()
@@ -216,11 +218,11 @@ class DMN(nn.Module):
                 topk_list.append(outputs_topk)
                 target_list.append(targets)
 
-            acc = np.array([True for _ in range(outputs.size(0))])
+            acc = np.array([0.0 for _ in range(outputs.size(0))])
             for target, topk in zip(target_list, topk_list):
                 acc *= np.array([float(k == tk[0]) for (k, tk) in zip(target, topk)])
                 # print(acc)
-            acc = np.mean(acc)
+            acc = np.mean(acc) * 100
 
         return acc
  
