@@ -1,6 +1,7 @@
-# dmn-pytorch
-This is a reproduction code of the paper, Ask me anything blah blab. </br>
-hello
+# Dynamic Memory Networks (PyTorch)
+Reproduction code of the paper, </br>
+Ask Me Anything: Dynamic Memory Networks for Natural Language Processing </br>
+Kumar et al., 2016 arxiv
 
 Task | Accuracy
 ---- | --------
