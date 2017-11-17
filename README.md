@@ -4,7 +4,7 @@ PyTorch implementation of the paper, </br>
 > Kumar et al., 2016 arxiv
 
 ## Model Overview
-![Dynamic Memory Networks](https://www.google.co.kr/url?sa=i&rct=j&q=&esrc=s&source=images&cd=&cad=rja&uact=8&ved=0ahUKEwjb1d-qlMXXAhXHybwKHWuFDG4QjRwIBw&url=https%3A%2F%2Fyerevann.github.io%2F2016%2F02%2F05%2Fimplementing-dynamic-memory-networks%2F&psig=AOvVaw3UcToUJEeS4xk1wIfU_6Dg&ust=1510992632691815)
+![Dynamic Memory Networks](https://yerevann.github.io/public/2016-02-06/dmn-details.png)
 
 ## Performance on bAbI
 Task | Accuracy
