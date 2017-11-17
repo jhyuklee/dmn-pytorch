@@ -1,5 +1,7 @@
 # Dynamic Memory Networks (PyTorch)
-Reproduction code of the paper, </br>
+## hello
+###### hellooooo
+PyTorch implementation of the paper, </br>
 Ask Me Anything: Dynamic Memory Networks for Natural Language Processing </br>
 Kumar et al., 2016 arxiv
 

@@ -36,12 +36,11 @@ def run_epoch(m, d, ep, mode='tr', set_num=1, is_train=True):
         a_loss = m.criterion(outputs[:,0,:], answers[:,0])
         if answers.size(1) > 1: # multiple answer
             a_loss += m.criterion(outputs[:,1,:], answers[:,1])
-        for episode in range(m.config.max_episode):
+        for episode in range(5):
             if episode == 0:
                 g_loss = m.criterion(gates[:,episode,:], sup_facts[:,episode]) 
             else:
                 g_loss += m.criterion(gates[:,episode,:], sup_facts[:,episode])
-                pass
         beta = 0 if ep < m.config.beta_cnt and mode == 'tr' else 1
         alpha = 1
         metrics = m.get_metrics(outputs, answers, multiple=answers.size(1)>1)
