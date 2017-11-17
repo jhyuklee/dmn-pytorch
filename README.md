@@ -1,6 +1,6 @@
 # Dynamic Memory Networks (PyTorch)
 PyTorch implementation of the paper, </br>
-*Ask Me Anything: Dynamic Memory Networks for Natural Language Processing* </br>
+> *Ask Me Anything: Dynamic Memory Networks for Natural Language Processing* </br>
 > Kumar et al., 2016 arxiv
 
 ## Model Overview
