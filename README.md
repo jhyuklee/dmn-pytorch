@@ -1,10 +1,12 @@
 # Dynamic Memory Networks (PyTorch)
-## hello
-###### hellooooo
-PyTorch <h1> hoho </h1>implementation of the paper, </br>
-Ask Me Anything: Dynamic Memory Networks for Natural Language Processing </br>
-Kumar et al., 2016 arxiv
+PyTorch implementation of the paper, </br>
+*Ask Me Anything: Dynamic Memory Networks for Natural Language Processing* </br>
+> Kumar et al., 2016 arxiv
 
+## Model Overview
+![Dynamic Memory Networks](https://www.google.co.kr/url?sa=i&rct=j&q=&esrc=s&source=images&cd=&cad=rja&uact=8&ved=0ahUKEwjb1d-qlMXXAhXHybwKHWuFDG4QjRwIBw&url=https%3A%2F%2Fyerevann.github.io%2F2016%2F02%2F05%2Fimplementing-dynamic-memory-networks%2F&psig=AOvVaw3UcToUJEeS4xk1wIfU_6Dg&ust=1510992632691815)
+
+## Performance on bAbI
 Task | Accuracy
 ---- | --------
  1 | 100%
