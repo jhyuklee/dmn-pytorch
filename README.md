@@ -8,7 +8,7 @@ PyTorch implementation of the paper, </br>
 
 ## Run Code
 ```
-hello world
+$ python3 main.py
 ```
 
 ## Experimental Results (bAbI)
