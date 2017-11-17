@@ -6,12 +6,12 @@ PyTorch implementation of the paper, </br>
 ## Model Overview
 ![Dynamic Memory Networks](https://yerevann.github.io/public/2016-02-06/dmn-details.png)
 
-## Performance on bAbI
-Task | Accuracy
----- | --------
- 1 | 100%
- 2 | 14.84%
- 3 | 18.75%
+## Experimental Results (bAbI)
+Task | Accuracy | Task | Accuracy
+---- | -------- | ---- | -------
+ 1 | 100% | 11 | 100%
+ 2 | 14.84% | 12 | 100%
+ 3 | 18.75% | 13 | 95.21%
  4 | 100%
  5 | 99.51%
  6 | 56.15% 
