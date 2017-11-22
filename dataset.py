@@ -229,6 +229,10 @@ class Dataset(object):
         stories = [d[0] for d in padded_data]
         questions = [d[1] for d in padded_data]
         answers = [d[2] for d in padded_data]
+        if len(np.array(answers).shape) < 2:
+            for answer in answers:
+                while len(answer) != self.config.max_alen:
+                    answer.append(-100)
         sup_facts = [d[3] for d in padded_data]
         for sup_fact in sup_facts:
             while len(sup_fact) < self.config.max_episode:

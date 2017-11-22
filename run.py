@@ -24,7 +24,7 @@ def run_epoch(m, d, ep, mode='tr', set_num=1, is_train=True):
         wrap_var = lambda x: Variable(wrap_tensor(x)).cuda()
         stories = wrap_var(stories)
         questions = wrap_var(questions)
-        answers = wrap_var(answers) # TODO: multiple answer
+        answers = wrap_var(answers)
         sup_facts = wrap_var(sup_facts) - 1
         s_lens = wrap_tensor(s_lens)
         q_lens = wrap_tensor(q_lens)
@@ -35,7 +35,8 @@ def run_epoch(m, d, ep, mode='tr', set_num=1, is_train=True):
         outputs, gates = m(stories, questions, s_lens, q_lens, e_lens)
         a_loss = m.criterion(outputs[:,0,:], answers[:,0])
         if answers.size(1) > 1: # multiple answer
-            a_loss += m.criterion(outputs[:,1,:], answers[:,1])
+            for ans_idx in range(m.config.max_alen):
+                a_loss += m.criterion(outputs[:,ans_idx,:], answers[:,ans_idx])
         for episode in range(5):
             if episode == 0:
                 g_loss = m.criterion(gates[:,episode,:], sup_facts[:,episode]) 

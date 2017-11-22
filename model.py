@@ -143,7 +143,7 @@ class DMN(nn.Module):
         a_rnn_h = memory
         ys = []
         #print('q_rep', q_rep[0,:])
-        for step in range(2):
+        for step in range(self.config.max_alen):
             a_rnn_h = self.a_cell(torch.cat((y, q_rep), 1), a_rnn_h)
             z = self.out(a_rnn_h)
             y = F.softmax(z)
@@ -218,7 +218,7 @@ class DMN(nn.Module):
                 topk_list.append(outputs_topk)
                 target_list.append(targets)
 
-            acc = np.array([0.0 for _ in range(outputs.size(0))])
+            acc = np.array([1.0 for _ in range(outputs.size(0))])
             for target, topk in zip(target_list, topk_list):
                 acc *= np.array([float(k == tk[0]) for (k, tk) in zip(target, topk)])
                 # print(acc)
