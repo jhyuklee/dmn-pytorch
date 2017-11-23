@@ -220,7 +220,8 @@ class DMN(nn.Module):
 
             acc = np.array([1.0 for _ in range(outputs.size(0))])
             for target, topk in zip(target_list, topk_list):
-                acc *= np.array([float(k == tk[0]) for (k, tk) in zip(target, topk)])
+                acc *= np.array([float(k == tk[0] or k == -100) \
+                        for (k, tk) in zip(target, topk)])
                 # print(acc)
             acc = np.mean(acc) * 100
 
@@ -228,7 +229,8 @@ class DMN(nn.Module):
  
     def save_checkpoint(self, state, filename=None):
         if filename is None:
-            filename = self.config.checkpoint_dir + self.config.model_name + '.pth'
+            filename = (self.config.checkpoint_dir +\
+                    self.config.model_name + str(self.set_num) + '.pth')
         else:
             filename = self.config.checkpoint_dir + filename
         print('\t=> save checkpoint %s' % filename)
@@ -236,7 +238,8 @@ class DMN(nn.Module):
 
     def load_checkpoint(self, filename=None):
         if filename is None:
-            filename = self.config.checkpoint_dir + self.config.model_name + '.pth'
+            filename = (self.config.checkpoint_dir +\
+                    self.config.model_name + str(self.set_num) + '.pth')
         else:
             filename = self.config.checkpoint_dir + filename
         print('\t=> load checkpoint %s' % filename)
