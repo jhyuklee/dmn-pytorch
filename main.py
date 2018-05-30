@@ -10,7 +10,7 @@ from run import run_epoch
 
 argparser = argparse.ArgumentParser()
 # run settings
-argparser.add_argument('--data_path', type=str, default='./data/babi(v0.2).pkl')
+argparser.add_argument('--data_path', type=str, default='./data/babi(tmp).pkl')
 argparser.add_argument('--model_name', type=str, default='m')
 argparser.add_argument('--checkpoint_dir', type=str, default='./results/')
 argparser.add_argument('--batch_size', type=int, default=32)
@@ -41,7 +41,7 @@ argparser.add_argument('--word_dr', type=float, default=0.2)
 argparser.add_argument('--g1_dim', type=int, default=500)
 argparser.add_argument('--max_episode', type=int, default=10)
 argparser.add_argument('--beta_cnt', type=int, default=10)
-argparser.add_argument('--set_num', type=int, default=2)
+argparser.add_argument('--set_num', type=int, default=1)
 argparser.add_argument('--max_alen', type=int, default=2)
 args = argparser.parse_args()
 

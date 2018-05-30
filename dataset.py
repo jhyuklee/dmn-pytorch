@@ -307,9 +307,10 @@ class Dataset(object):
     
 class Config(object):
     def __init__(self):
-        self.data_dir = './data/en/'
+        user_home = expanduser('~')
+        self.data_dir = os.path.join(user_home, 'datasets/babi/en')
         self.word2vec_type = 6  # 6 or 840 (B)
-        self.word2vec_path = expanduser('~') + '/common/glove/glove.'\
+        self.word2vec_path = expanduser('~') + '/datasets/glove/glove.'\
                 + str(self.word2vec_type) + 'B.300d.txt'
         self.word_embed_dim = 300
         self.batch_size = 32
@@ -331,6 +332,9 @@ class Config(object):
 """
 
 if __name__ == '__main__':
+    if not os.path.exists('./data'):
+        os.makedirs('./data')
+    
     config = Config()
     if config.save_preprocess:
         dataset = Dataset(config)
