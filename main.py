@@ -3,6 +3,7 @@ import argparse
 import pickle
 import pprint
 import numpy as np
+import os
 from dataset import Dataset, Config
 from model import DMN
 from run import run_epoch
@@ -95,6 +96,9 @@ def run_experiment(model, dataset, set_num):
 
 
 def main():
+    if not os.path.exists('./results'):
+        os.makedirs('./results')
+
     print('### load dataset')
     dataset = pickle.load(open(args.data_path, 'rb'))
     
